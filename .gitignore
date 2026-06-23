@@ -6,3 +6,5 @@ admin/iknow.db
 .DS_Store
 *.db-journal
 *.db-wal
+*.db-shm
+*.db-wal
