@@ -92,11 +92,19 @@ uvicorn admin.server:app --host 0.0.0.0 --port $PORT
 
 ## 待办 / 可优化项
 1. **[高]** Render 需配置 LLM_API_KEY / LLM_BASE_URL / LLM_MODEL 环境变量才能生成
-2. **[中]** news_scraper (36kr/机器之心) 可能因反爬失效，需检查或替换
-3. **[中]** 前端 Markdown 预览可改用 marked.js 获得更好的表格/代码渲染
+2. ✅ news_scraper 已重构：36kr/机器之心移除（JS 渲染不可抓），改用少数派 RSS + AI 关键词过滤
+3. ✅ 前端 Markdown 预览已升级为 marked.js + highlight.js，支持代码高亮
 4. **[低]** 添加定时任务 (cron) 自动每日运行流水线
 5. **[低]** ProductHunt 被 Cloudflare 防护，当前无法抓取
 6. **[低]** V2EX 的 "ai" 节点不存在 (404)，已 fallback 到 programmer/create 节点
-7. **[低]** 前端 Markdown 表格渲染比较简陋，可升级
+7. ✅ 已通过 marked.js 解决，表格/代码块/引用均正常渲染
 8. **[想法]** 增加内容发布到飞书/微信的自动化
 9. **[想法]** 增加用户反馈/评分机制来优化 Prompt
+
+## 已完善 (2026-06-24)
+- ✅ Markdown 渲染升级为 marked.js + highlight.js
+- ✅ 内容下载按钮（导出 .md）
+- ✅ news_scraper 重构（36kr/机器之心→少数派 RSS）
+- ✅ ContentGenerator 改用 PM_PROMPTS（修复生成失败）
+- ✅ 前端 4 Tab SPA 仪表盘完整可用
+- ✅ 5 篇 PM 内容成功生成（16,952 字）

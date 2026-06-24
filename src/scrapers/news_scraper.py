@@ -1,103 +1,115 @@
-"""AI 行业新闻爬虫 — 36氪、机器之心、量子位"""
-import re
+"""AI 行业新闻爬虫 — RSS 聚合"""
 from typing import Optional
 import requests
-from bs4 import BeautifulSoup
+import xml.etree.ElementTree as ET
+import re
+import html
 
 
 class NewsScraper:
-    """爬取 AI 行业新闻源"""
+    """通过 RSS 聚合 AI 行业新闻"""
 
-    SOURCES = {
-        "36kr": {
-            "url": "https://36kr.com/search/articles/人工智能",
-            "item_selector": "div.article-item-wrapper",
-            "title_selector": "a.article-item-title",
-            "summary_selector": "a.article-item-description",
-            "link_attr": "href",
-        },
-        "jiqizhixin": {
-            "url": "https://www.jiqizhixin.com/articles",
-            "item_selector": "div.article-item",
-            "title_selector": "h2 a, h3 a",
-            "summary_selector": "p",
-            "link_attr": "href",
-        },
-    }
+    # 少数派 RSS + AI 关键词过滤
+    SSPAI_FEED = "https://sspai.com/feed"
+    AI_KEYWORDS = [
+        "AI", "人工智能", "大模型", "ChatGPT", "Claude", "GPT", "LLM",
+        "机器学习", "深度学习", "Agent", "智能体", "AIGC", "Prompt",
+        "Copilot", "Cursor", "Codex", "OpenAI", "DeepSeek", "Gemini",
+        "RAG", "MCP", "多模态", "自动驾驶", "机器人", "具身智能",
+        "Diffusion", "Sora", "Transformer", "神经网络", "大语言模型",
+        "AI Agent", "Vibe Coding", "AI 编程", "AI 工具",
+    ]
 
     def __init__(self, proxy: Optional[str] = None):
         self.session = requests.Session()
-        self.session.trust_env = False  # 忽略系统代理
+        self.session.trust_env = False
         self.session.headers.update({
-            "User-Agent": (
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/125.0.0.0 Safari/537.36"
-            ),
-            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
         })
         if proxy:
             self.session.proxies = {"https": proxy}
 
-    def fetch_36kr(self) -> list[dict]:
-        """爬取 36氪 AI 频道"""
-        return self._fetch("36kr")
+    def _clean_html(self, text: str) -> str:
+        clean = re.sub(r'<[^>]+>', '', text)
+        clean = html.unescape(clean)
+        return clean.strip()[:400]
 
-    def fetch_jiqizhixin(self) -> list[dict]:
-        """爬取机器之心"""
-        return self._fetch("jiqizhixin")
+    def _is_ai_related(self, title: str, desc: str) -> bool:
+        # 标题包含 AI 关键词 → 直接命中
+        if any(kw.lower() in title.lower() for kw in self.AI_KEYWORDS):
+            return True
+        # 标题包含科技/产品关键词 + 摘要包含 AI 关键词 → 命中
+        tech_keywords = ["AI", "Meta", "Google", "Apple", "OpenAI", "微软", "腾讯",
+                        "字节", "阿里", "模型", "智能", "代码", "编程", "开发",
+                        "Copilot", "Agent", "机器人", "自动"]
+        if any(kw.lower() in title.lower() for kw in tech_keywords):
+            clean = self._clean_html(desc)[:300]
+            return any(kw.lower() in clean.lower() for kw in self.AI_KEYWORDS)
+        return False
 
-    def _fetch(self, source_key: str) -> list[dict]:
-        cfg = self.SOURCES.get(source_key)
-        if not cfg:
-            return []
-
+    def fetch_sspai(self) -> list[dict]:
+        """从少数派 RSS 抓取 AI 相关内容"""
         try:
-            resp = self.session.get(cfg["url"], timeout=15)
+            resp = self.session.get(self.SSPAI_FEED, timeout=15)
             resp.raise_for_status()
-            soup = BeautifulSoup(resp.text, "lxml")
+            root = ET.fromstring(resp.content)
         except Exception as e:
-            print(f"[{source_key}] 请求失败: {e}")
+            print(f"[少数派] RSS 失败: {e}")
             return []
 
-        articles = []
-        items = soup.select(cfg["item_selector"])
+        items = root.findall(".//item")
+        results = []
 
-        for item in items[:20]:
-            title_el = item.select_one(cfg["title_selector"])
-            summary_el = item.select_one(cfg["summary_selector"])
+        for item in items[:30]:
+            title_el = item.find("title")
+            link_el = item.find("link")
+            desc_el = item.find("description")
+            pubdate_el = item.find("pubDate")
+            creator_el = item.find("{http://purl.org/dc/elements/1.1/}creator")
 
-            title = title_el.get_text(strip=True) if title_el else ""
-            summary = summary_el.get_text(strip=True) if summary_el else ""
-            link = title_el.get(cfg["link_attr"], "") if title_el else ""
-            if link and not link.startswith("http"):
-                if source_key == "36kr":
-                    link = "https://36kr.com" + link
+            title = title_el.text.strip() if title_el is not None and title_el.text else ""
+            link = link_el.text.strip() if link_el is not None and link_el.text else ""
+            raw_desc = desc_el.text if desc_el is not None else ""
 
             if not title:
                 continue
 
-            articles.append({
+            summary = self._clean_html(raw_desc)
+
+            if not self._is_ai_related(title, raw_desc):
+                continue
+
+            results.append({
                 "title": title[:200],
-                "summary": summary[:300],
+                "summary": summary,
                 "url": link,
-                "source": source_key,
+                "author": creator_el.text if creator_el is not None else "",
+                "published": pubdate_el.text if pubdate_el is not None else "",
+                "source": "sspai",
             })
 
-        return articles
+        return results
 
     def fetch_all(self) -> list[dict]:
-        """聚合所有新闻源"""
-        all_articles = []
-        all_articles.extend(self.fetch_36kr())
-        all_articles.extend(self.fetch_jiqizhixin())
-        return all_articles
+        articles = self.fetch_sspai()
+        print(f"[新闻] 少数派 AI: {len(articles)} 篇")
+        return articles
+
+    def fetch_36kr(self) -> list[dict]:
+        print("[36kr] JS 渲染页面，已不可用")
+        return []
+
+    def fetch_jiqizhixin(self) -> list[dict]:
+        print("[机器之心] RSS 已失效")
+        return []
 
 
-# 独立运行测试
 if __name__ == "__main__":
-    scraper = NewsScraper()
-    articles = scraper.fetch_all()
-    print(f"获取 {len(articles)} 篇新闻")
+    s = NewsScraper()
+    articles = s.fetch_all()
+    print(f"\n获取 {len(articles)} 篇 AI 相关新闻")
+    print("-" * 60)
     for a in articles[:10]:
-        print(f"  [{a['source']}] {a['title'][:80]}")
+        print(f"  [{a['source']}] {a['title'][:60]}")
+        print(f"         {a['summary'][:80]}...")
+        print()
