@@ -4,7 +4,7 @@ from typing import Optional
 
 from src.config import config
 from src.model_resolver import resolver
-from src.generators.prompts import PROMPTS
+from src.generators.pm_prompts import PM_PROMPTS as PROMPTS
 
 
 class ContentGenerator:
